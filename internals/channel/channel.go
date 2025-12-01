@@ -1,6 +1,8 @@
 package channel
 
 import (
+    "os"
+    "errors"
 	"fmt"
 	"net"
 	"sync"
@@ -49,13 +51,45 @@ func (c *Channel) ListSubscribers() []net.Conn {
     return subscribers
 }
 
-func (c *Channel) Broadcast(message string) {
+func (c *Channel) Broadcast(channelName string, message *message.Message) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for sub := range c.Subscribers {
 		fmt.Fprintln(sub, "MSG", c.Name, message)
 	}
+
+    filePath := "logs/" + channelName + ".log"
+	isFileExist := checkFileExists(filePath)
+
+    if isFileExist {
+		fmt.Println("file exist")
+        file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+        if err != nil {
+            fmt.Println("There was an error opening the file")
+        }
+        defer file.Close()
+
+        line := fmt.Sprintf("[%s] %s: %s \n", message.Timestamp.Local().Format("15:04:05"), message.ChannelName, message.Content)
+        _, err = file.WriteString(line)
+        if err != nil {
+            fmt.Println("There was an error adding to the file")
+        }
+	} else {
+
+		fmt.Println("file not exists")
+        err := os.WriteFile(filePath, []byte(fmt.Sprintf("[%s] %s: %s \n", message.Timestamp.Local().Format("15:04:05"), message.ChannelName, message.Content)), 0644)
+        if err != nil {
+            fmt.Println("There was an error creating the file")
+        }
+
+	}
+}
+
+func checkFileExists(filePath string) bool {
+	_, error := os.Stat(filePath)
+	//return !os.IsNotExist(err)
+	return !errors.Is(error, os.ErrNotExist)
 }
 
 func (c *Channel) AddMessageToChannel(content string) *message.Message{

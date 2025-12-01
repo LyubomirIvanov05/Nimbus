@@ -116,8 +116,8 @@ func (b *Broker) handleSubscribe(conn net.Conn, channelName string) {
 
 func (b *Broker) handlePublish(channelName, message string) {
 	ch := b.getOrCreateChannel(channelName)
-	ch.AddMessageToChannel(message)
-	ch.Broadcast(message)
+	msg := ch.AddMessageToChannel(message)
+	ch.Broadcast(channelName, msg)
 }
 
 func (b *Broker) handleFetch(conn net.Conn, channelName string){
