@@ -32,14 +32,18 @@ func (c *Channel) AddSubscriber(conn net.Conn) {
     fmt.Println("[CHANNEL/ADD_SUBSCRIBER] Subscribers:", c.Subscribers)
 }
 
-func (c *Channel) RemoveSubscriber(conn net.Conn) {
+func (c *Channel) RemoveSubscriber(conn net.Conn) bool{
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	_, ok := c.Subscribers[conn]
 	if !ok {
-		return
+        fmt.Println("Subscriber doesn't exist")
+		return false
 	}
 	delete(c.Subscribers, conn)
+    fmt.Println("[CHANNEL/REMOVE_SUBSCRIBER] Removed subscriber from channel", c.Name)
+    fmt.Println("[CHANNEL/REMOVE_SUBSCRIBER] Subscribers:", c.Subscribers)
+    return true
 }
 
 func (c *Channel) ListSubscribers() []net.Conn {

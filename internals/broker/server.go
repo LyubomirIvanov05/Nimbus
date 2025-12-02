@@ -99,6 +99,8 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		if len(fields) < 2 {
 			fmt.Fprintf(conn, "ERR UNSUBSCRIBE needs channel")
 		}
+		channelName := fields[1]
+		b.handleUnsubscribe(conn, channelName)
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -119,6 +121,16 @@ func (b *Broker) handleSubscribe(conn net.Conn, channelName string) {
 	ch := b.getOrCreateChannel(channelName)
 	ch.AddSubscriber(conn)
 	fmt.Fprintf(conn, "OK SUBSCRIBED to %s\n", channelName)
+}
+
+func (b *Broker) handleUnsubscribe(conn net.Conn, channelName string){
+	ch := b.getOrCreateChannel(channelName)
+	res := ch.RemoveSubscriber(conn)
+	if res {
+		fmt.Fprintf(conn, "OK UNSUBSCRIBED TO %s\n", channelName)
+	} else {
+		fmt.Fprintf(conn, "ERR not subscribed to %s\n", channelName)
+	}
 }
 
 func (b *Broker) handlePublish(channelName, message string) {
@@ -183,7 +195,6 @@ func (b *Broker) LoadAllLogs(){
 			}
 			ch := b.getOrCreateChannel(currChanneleName)
 			ch.AddMessageStructToChannel(msg)
-			fmt.Println("Curr structured msg", msg)
 
 		}
 

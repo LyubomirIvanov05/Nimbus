@@ -28,7 +28,8 @@ func (b *Broker) Start() {
 }
 
 func (b *Broker) getOrCreateChannel(name string) *channel.Channel {
-	fmt.Println("[BROKER/GET_OR_CREATE_CHANNEL] Getting or creating channel:", name)
+	//NOTE: commented because it's annoying for now, uncomment when debugging
+	// fmt.Println("[BROKER/GET_OR_CREATE_CHANNEL] Getting or creating channel:", name)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
