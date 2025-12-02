@@ -103,6 +103,8 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		b.handleUnsubscribe(conn, channelName)
 	case "PING":
 		b.handlePing(conn)
+	case "WHOAMI":
+		b.handleIdentity(conn)
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -159,10 +161,11 @@ func (b *Broker) loadAllLogs(){
 	}
 
 	for _, file := range files {
-		fmt.Println(file.Name())
+		//NOTE: Commented out because not needed on daily basis, only for debugging
+		// fmt.Println(file.Name())
 		//NOTE: Format is 1|2025-02-01T12:05:05Z|chat|hello
 		currFile := "logs/" + file.Name()
-		fmt.Println("currFile:", currFile)
+		// fmt.Println("currFile:", currFile)
 		currLogs, err := os.ReadFile(currFile)
 		if err != nil {
 			fmt.Println("ERROR while reading logs from file")
@@ -205,4 +208,8 @@ func (b *Broker) loadAllLogs(){
 
 func (b *Broker) handlePing(conn net.Conn){
 	fmt.Fprintf(conn, "PONG\n")
+}
+
+func (b *Broker) handleIdentity(conn net.Conn){
+	fmt.Fprintf(conn, "YOU ARE %s\n", conn.RemoteAddr().String())
 }
