@@ -90,14 +90,15 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		b.handleList(conn)
 	case "FETCH":
 		if len(fields) < 2 {
-			fmt.Fprintf(conn, "ERR FETCH needs only channel")
+			fmt.Fprintf(conn, "ERR FETCH needs only channel\n")
 			return
 		}
 		channelName := fields[1]
 		b.handleFetch(conn, channelName)
 	case "UNSUBSCRIBE":
 		if len(fields) < 2 {
-			fmt.Fprintf(conn, "ERR UNSUBSCRIBE needs channel")
+			fmt.Fprintf(conn, "ERR UNSUBSCRIBE needs channel\n")
+			return
 		}
 		channelName := fields[1]
 		b.handleUnsubscribe(conn, channelName)
@@ -105,6 +106,14 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		b.handlePing(conn)
 	case "WHOAMI":
 		b.handleIdentity(conn)
+	case "INFO":
+		if len(fields) < 2 {
+			fmt.Fprintf(conn, "ERR INFO needs channel\n")
+			return
+		}
+		channelName := fields[1]
+		b.handleInfo(conn, channelName)
+
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -212,4 +221,12 @@ func (b *Broker) handlePing(conn net.Conn){
 
 func (b *Broker) handleIdentity(conn net.Conn){
 	fmt.Fprintf(conn, "YOU ARE %s\n", conn.RemoteAddr().String())
+}
+
+func (b *Broker) handleInfo(conn net.Conn, channelName string){
+	ch := b.getOrCreateChannel(channelName)
+	messages := ch.GetMessages()
+	subscribers := ch.ListSubscribers()
+	fmt.Fprintf(conn, "SUBSCRIBERS %d\n", len(subscribers))
+	fmt.Fprintf(conn, "MESSAGES %d\n", len(messages))
 }
