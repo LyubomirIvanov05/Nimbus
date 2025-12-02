@@ -4,6 +4,7 @@ import (
 	"net"
 	"sync"
 	"fmt"
+	"errors"
 	"github.com/LyubomirIvanov05/nimbus/internals/channel"
 )
 
@@ -51,3 +52,20 @@ func (b *Broker) removeConnection(conn net.Conn) {
 	}
 }
 
+func (b *Broker) removeChannel(name string) (bool, error){
+	b.mu.Lock()
+	ch, ok := b.channels[name]
+	if !ok {
+		b.mu.Unlock()
+		return false, errors.New("channel doesn't exist")
+	}
+
+	delete(b.channels, name)
+	b.mu.Unlock()
+
+	subs := ch.ListSubscribers()
+	for _, conn := range subs {
+		ch.RemoveSubscriber(conn)
+	}
+	return true, nil
+}

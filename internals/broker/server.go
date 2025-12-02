@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"os"
 	"github.com/LyubomirIvanov05/nimbus/internals/message"
+	"github.com/LyubomirIvanov05/nimbus/internals/channel"
 	"strconv"
 )
 
@@ -113,7 +114,21 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		}
 		channelName := fields[1]
 		b.handleInfo(conn, channelName)
-
+	case "DELETE":
+		if len(fields) < 2{
+			fmt.Fprintf(conn, "ERR DELETE needs channel\n")
+			return
+		}
+		channelName := fields[1]
+		b.deleteChannel(conn, channelName)
+	// case "GET":
+	// 	if len(fields) < 3 {
+	// 		fmt.Fprintf(conn, "ERR GET need channel and id\n")
+	// 		return
+	// 	}
+	// 	channelName := fields[1]
+	// 	id := fields[2]
+	// 	b.handleGet(channelName, id)
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -229,4 +244,23 @@ func (b *Broker) handleInfo(conn net.Conn, channelName string){
 	subscribers := ch.ListSubscribers()
 	fmt.Fprintf(conn, "SUBSCRIBERS %d\n", len(subscribers))
 	fmt.Fprintf(conn, "MESSAGES %d\n", len(messages))
+}
+
+func (b *Broker) deleteChannel(conn net.Conn, channelName string){
+	ok, err := b.removeChannel(channelName)
+	if err != nil {
+		fmt.Fprintf(conn, "ERR %s\n", err.Error())
+		return
+	}
+	if ok {
+		fileDir := "logs/" + channelName + ".log"
+		isFileExist := channel.CheckFileExists(fileDir)
+		if isFileExist {
+			e := os.Remove(fileDir)
+			if e != nil {
+				fmt.Println("ERROR couldn't delete file")
+			}
+		}
+		fmt.Fprintf(conn, "OK DELETED %s\n", channelName)
+	}
 }

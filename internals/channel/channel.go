@@ -67,7 +67,7 @@ func (c *Channel) Broadcast(channelName string, message *message.Message) {
 	}
 
     filePath := "logs/" + channelName + ".log"
-	isFileExist := checkFileExists(filePath)
+	isFileExist := CheckFileExists(filePath)
 
     if isFileExist {
 		fmt.Println("file exist, about to add to the file")
@@ -93,7 +93,7 @@ func (c *Channel) Broadcast(channelName string, message *message.Message) {
 	}
 }
 
-func checkFileExists(filePath string) bool {
+func CheckFileExists(filePath string) bool {
 	_, error := os.Stat(filePath)
 	//return !os.IsNotExist(err)
 	return !errors.Is(error, os.ErrNotExist)
