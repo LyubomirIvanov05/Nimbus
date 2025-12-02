@@ -41,6 +41,8 @@ func (c *Channel) RemoveSubscriber(conn net.Conn) bool{
 		return false
 	}
 	delete(c.Subscribers, conn)
+    //NOTE: We are printing the same message for unsubscribing and an user disconnecting
+    //These two operations have to have different logging
     fmt.Println("[CHANNEL/REMOVE_SUBSCRIBER] Removed subscriber from channel", c.Name)
     fmt.Println("[CHANNEL/REMOVE_SUBSCRIBER] Subscribers:", c.Subscribers)
     return true

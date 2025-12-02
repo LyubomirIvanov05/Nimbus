@@ -20,7 +20,7 @@ func (b *Broker) StartServer() {
 	}
 
 	fmt.Println("Server started on port 7070")
-	b.LoadAllLogs()
+	b.loadAllLogs()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -101,6 +101,8 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		}
 		channelName := fields[1]
 		b.handleUnsubscribe(conn, channelName)
+	case "PING":
+		b.handlePing(conn)
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -150,7 +152,7 @@ func (b *Broker) handleFetch(conn net.Conn, channelName string){
 	fmt.Fprintf(conn, "OK FETCHED %d messages\n", len(messages))
 }
 
-func (b *Broker) LoadAllLogs(){
+func (b *Broker) loadAllLogs(){
 	files, err := os.ReadDir("logs")
 	if err != nil {
 		fmt.Println("ERROR while reading /logs folder")
@@ -199,4 +201,8 @@ func (b *Broker) LoadAllLogs(){
 		}
 
 	}
+}
+
+func (b *Broker) handlePing(conn net.Conn){
+	fmt.Fprintf(conn, "PONG\n")
 }
