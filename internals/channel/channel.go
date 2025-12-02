@@ -2,6 +2,7 @@ package channel
 
 import (
     "os"
+    "time"
     "errors"
 	"fmt"
 	"net"
@@ -63,22 +64,22 @@ func (c *Channel) Broadcast(channelName string, message *message.Message) {
 	isFileExist := checkFileExists(filePath)
 
     if isFileExist {
-		fmt.Println("file exist")
+		fmt.Println("file exist, about to add to the file")
         file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
         if err != nil {
             fmt.Println("There was an error opening the file")
         }
         defer file.Close()
 
-        line := fmt.Sprintf("[%s] %s: %s \n", message.Timestamp.Local().Format("15:04:05"), message.ChannelName, message.Content)
+        line := fmt.Sprintf("%d|%s|%s|%s\n", message.ID, message.Timestamp.Format(time.RFC3339Nano), message.ChannelName, message.Content)
         _, err = file.WriteString(line)
         if err != nil {
             fmt.Println("There was an error adding to the file")
         }
 	} else {
 
-		fmt.Println("file not exists")
-        err := os.WriteFile(filePath, []byte(fmt.Sprintf("[%s] %s: %s \n", message.Timestamp.Local().Format("15:04:05"), message.ChannelName, message.Content)), 0644)
+		fmt.Println("file not exists, about to create a new file and add to it")
+        err := os.WriteFile(filePath, []byte(fmt.Sprintf("%d|%s|%s|%s\n", message.ID, message.Timestamp.Format(time.RFC3339Nano), message.ChannelName, message.Content)), 0644)
         if err != nil {
             fmt.Println("There was an error creating the file")
         }
@@ -106,4 +107,11 @@ func (c *Channel) GetMessages() []*message.Message{
     defer c.mu.RUnlock()
     
     return c.Messages
+}
+
+func (c *Channel) AddMessageStructToChannel(msg *message.Message){
+    c.mu.Lock()
+    defer c.mu.Unlock()
+    c.Messages = append(c.Messages, msg)
+
 }

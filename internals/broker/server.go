@@ -6,6 +6,10 @@ import (
 	"net"
 	"strings"
 	"time"
+	"bytes"
+	"os"
+	"github.com/LyubomirIvanov05/nimbus/internals/message"
+	"strconv"
 )
 
 func (b *Broker) StartServer() {
@@ -16,7 +20,7 @@ func (b *Broker) StartServer() {
 	}
 
 	fmt.Println("Server started on port 7070")
-
+	b.LoadAllLogs()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -91,7 +95,10 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		}
 		channelName := fields[1]
 		b.handleFetch(conn, channelName)
-
+	case "UNSUBSCRIBE":
+		if len(fields) < 2 {
+			fmt.Fprintf(conn, "ERR UNSUBSCRIBE needs channel")
+		}
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -129,4 +136,56 @@ func (b *Broker) handleFetch(conn net.Conn, channelName string){
 		m.ID, m.ChannelName, m.Timestamp.Format(time.RFC3339Nano), m.Content)
 	}
 	fmt.Fprintf(conn, "OK FETCHED %d messages\n", len(messages))
+}
+
+func (b *Broker) LoadAllLogs(){
+	files, err := os.ReadDir("logs")
+	if err != nil {
+		fmt.Println("ERROR while reading /logs folder")
+	}
+
+	for _, file := range files {
+		fmt.Println(file.Name())
+		//NOTE: Format is 1|2025-02-01T12:05:05Z|chat|hello
+		currFile := "logs/" + file.Name()
+		fmt.Println("currFile:", currFile)
+		currLogs, err := os.ReadFile(currFile)
+		if err != nil {
+			fmt.Println("ERROR while reading logs from file")
+		}
+		scanner := bufio.NewScanner(bytes.NewReader(currLogs))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line == ""{
+				continue
+			}
+			parts := strings.SplitN(line, "|", 4)
+			currId, err := strconv.Atoi(parts[0])
+			if err != nil {
+				fmt.Println("Couldn't convert ID to int", err)
+        		return
+			}
+			currTimestamp, err := time.Parse(time.RFC3339Nano, parts[1])
+
+			if err != nil {
+				fmt.Println("Couldn't convert Timestamp to time", err)
+        		return
+			}
+			currChanneleName := parts[2]
+			currContent := parts[3]
+
+
+			msg := &message.Message{
+				ID: currId,
+				ChannelName: currChanneleName,
+				Content: currContent,
+				Timestamp: currTimestamp,
+			}
+			ch := b.getOrCreateChannel(currChanneleName)
+			ch.AddMessageStructToChannel(msg)
+			fmt.Println("Curr structured msg", msg)
+
+		}
+
+	}
 }
