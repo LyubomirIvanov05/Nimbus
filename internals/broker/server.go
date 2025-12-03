@@ -121,14 +121,19 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		}
 		channelName := fields[1]
 		b.deleteChannel(conn, channelName)
-	// case "GET":
-	// 	if len(fields) < 3 {
-	// 		fmt.Fprintf(conn, "ERR GET need channel and id\n")
-	// 		return
-	// 	}
-	// 	channelName := fields[1]
-	// 	id := fields[2]
-	// 	b.handleGet(channelName, id)
+	case "GET":
+		if len(fields) < 3 {
+			fmt.Fprintf(conn, "ERR GET need channel and id\n")
+			return
+		}
+		channelName := fields[1]
+		stringId := fields[2]
+		id, err := strconv.Atoi(stringId)
+		if err != nil {
+			fmt.Fprintf(conn, "ERR GET invalid last id\n")
+			return
+		}
+		b.handleGet(conn, channelName, id)
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -262,5 +267,30 @@ func (b *Broker) deleteChannel(conn net.Conn, channelName string){
 			}
 		}
 		fmt.Fprintf(conn, "OK DELETED %s\n", channelName)
+	}
+}
+
+func (b *Broker) handleGet(conn net.Conn, channelName string, id int){
+	ok := b.checkChannelExist(channelName)
+	if !ok {
+		fmt.Fprintf(conn, "ERR channel doesn't exist\n")
+		return
+	}
+	ch := b.getOrCreateChannel(channelName)
+	res := []string{}
+	for _, message := range ch.Messages {
+		if message.ID > id {
+			ts := message.Timestamp.UTC().Format("2006-01-02 15:04:05.000000")
+			formatted := fmt.Sprintf("MSG #%d %s %s %s", message.ID, message.ChannelName, ts, message.Content)
+			res = append(res, formatted)
+		}
+	}
+	finalMsg := fmt.Sprintf("OK GOT %d messages\n", len(res))
+	if len(res) > 0 {
+		fmt.Fprint(conn, strings.Join(res, "\n"))
+		fmt.Fprint(conn, "\n")
+		fmt.Fprint(conn, finalMsg)
+	} else {
+		fmt.Fprint(conn, finalMsg)
 	}
 }

@@ -69,3 +69,10 @@ func (b *Broker) removeChannel(name string) (bool, error){
 	}
 	return true, nil
 }
+
+func (b *Broker) checkChannelExist(name string) bool{
+	b.mu.Lock()
+	defer b.mu.RUnlock()
+	_, ok := b.channels[name]
+	return ok
+}
