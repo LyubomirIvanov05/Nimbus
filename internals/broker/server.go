@@ -123,7 +123,7 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		b.deleteChannel(conn, channelName)
 	case "GET":
 		if len(fields) < 3 {
-			fmt.Fprintf(conn, "ERR GET need channel and id\n")
+			fmt.Fprintf(conn, "ERR GET needs channel and id\n")
 			return
 		}
 		channelName := fields[1]
@@ -134,6 +134,23 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 			return
 		}
 		b.handleGet(conn, channelName, id)
+	case "RETENTION":
+		if len(fields) < 3 {
+			fmt.Fprintf(conn, "ERR RETENTION needs channel and number of messages\n")
+			return
+		}
+		channelName := fields[1]
+		msgsCount, err := strconv.Atoi(fields[2])
+		if err != nil {
+			fmt.Fprintf(conn, "ERR RETENTION invalid messages count\n")
+			return
+		}
+		if msgsCount <= 0 {
+			fmt.Fprintf(conn, "ERR RETENTION messages count has to be positive number\n")
+			return
+		}
+		b.handleRetention(conn, channelName, msgsCount)
+
 	default:
 		fmt.Fprintf(conn, "ERR Invalid command\n")
 	}
@@ -292,5 +309,31 @@ func (b *Broker) handleGet(conn net.Conn, channelName string, id int){
 		fmt.Fprint(conn, finalMsg)
 	} else {
 		fmt.Fprint(conn, finalMsg)
+	}
+}
+
+func (b *Broker) handleRetention(conn net.Conn, channelName string, msgCount int){
+	ok := b.checkChannelExist(channelName)
+	if !ok {
+		fmt.Fprintf(conn, "ERR channel doesn't exist\n")
+		return
+	}
+	ch := b.getOrCreateChannel(channelName)
+	// NOTE: not rlly sure abt this
+	// if msgCount == 0 {
+	// 	ch.RemoveFile(channelName)
+	// }
+	start := len(ch.Messages) - msgCount
+	if start < 0 {
+		start = 0
+	}
+	slicedMessages := ch.Messages[start:]
+	ok, err := ch.RewriteFile(channelName,slicedMessages)
+	if ok {
+		ch.Messages = slicedMessages
+		fmt.Fprintf(conn, "OK RETENTION %s %d", channelName, len(slicedMessages))
+	} else {
+		fmt.Fprintf(conn, "ERR RETENTION server error")
+		fmt.Println(err)
 	}
 }

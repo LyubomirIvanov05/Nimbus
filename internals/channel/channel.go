@@ -5,6 +5,7 @@ import (
     "time"
     "errors"
 	"fmt"
+    "strings"
 	"net"
 	"sync"
     "github.com/LyubomirIvanov05/nimbus/internals/message"
@@ -119,5 +120,31 @@ func (c *Channel) AddMessageStructToChannel(msg *message.Message){
     c.mu.Lock()
     defer c.mu.Unlock()
     c.Messages = append(c.Messages, msg)
+}
 
+func (c *Channel) RemoveFile(channelName string) (bool, error){
+    filePath := "logs/" + channelName + ".log"
+    e := os.Remove(filePath)
+    if e != nil {
+        return false, errors.New("couldn't delete file")
+    }
+    return true, nil
+}
+
+func (c *Channel) RewriteFile(channelName string, slicedMessages []*message.Message) (bool, error) {
+    filePath := "logs/" + channelName + ".log"
+    var b strings.Builder
+	for _, m := range slicedMessages {
+		b.WriteString(fmt.Sprintf("%d|%s|%s|%s\n",
+			m.ID,
+			m.Timestamp.UTC().Format(time.RFC3339Nano),
+			channelName,
+			m.Content,
+		))
+	}
+
+	if err := os.WriteFile(filePath, []byte(b.String()), 0644); err != nil {
+		return false, err
+	}
+	return true, nil
 }
