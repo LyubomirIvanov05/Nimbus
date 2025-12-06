@@ -2,15 +2,16 @@ package broker
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"time"
-	"bytes"
-	"os"
-	"github.com/LyubomirIvanov05/nimbus/internals/message"
 	"github.com/LyubomirIvanov05/nimbus/internals/channel"
-	"strconv"
+	"github.com/LyubomirIvanov05/nimbus/internals/client"
+	"github.com/LyubomirIvanov05/nimbus/internals/message"
 )
 
 func (b *Broker) StartServer() {
@@ -29,7 +30,6 @@ func (b *Broker) StartServer() {
 			continue
 		}
 		fmt.Println("Connection accepted:", conn.RemoteAddr())
-
 		go b.handleConnection(conn)
 	}
 }
@@ -41,6 +41,12 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		conn.Close()
 	}()
 	fmt.Println("This is supposed to handle the connection")
+	c := client.NewClient(conn, []*message.Message{}, time.Now(), make(map[string]int))
+	b.mu.Lock()
+	b.clients[conn] = c
+	b.heartbeats[conn] = time.Now()
+	b.mu.Unlock()
+	go b.monitorHeartbeat(conn)
 
 	scanner := bufio.NewScanner(conn)
 	for scanner.Scan() {
@@ -77,7 +83,8 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 			return
 		}
 		channelName := fields[1]
-		b.handleSubscribe(conn, channelName)
+		client := b.clients[conn]
+		b.handleSubscribe(client, channelName)
 	case "PUBLISH":
 		if len(fields) < 3 {
 			fmt.Fprintf(conn, "ERR PUBLISH needs channel and message\n")
@@ -115,7 +122,7 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		channelName := fields[1]
 		b.handleInfo(conn, channelName)
 	case "DELETE":
-		if len(fields) < 2{
+		if len(fields) < 2 {
 			fmt.Fprintf(conn, "ERR DELETE needs channel\n")
 			return
 		}
@@ -167,13 +174,26 @@ func (b *Broker) handleList(conn net.Conn) {
 	fmt.Println("[BROKER/HANDLE_LIST] Listed", len(b.channels), "channels")
 }
 
-func (b *Broker) handleSubscribe(conn net.Conn, channelName string) {
+func (b *Broker) handleSubscribe(client *client.Client, channelName string) {
 	ch := b.getOrCreateChannel(channelName)
-	ch.AddSubscriber(conn)
-	fmt.Fprintf(conn, "OK SUBSCRIBED to %s\n", channelName)
+	ch.AddSubscriber(client)
+	messages := ch.GetMessages()
+	last := client.LastSeen[channelName]
+	maxId := last
+	for _, m := range messages {
+		if m.ID > last {
+			ts := m.Timestamp.UTC().Format("2006-01-02 15:04:05.000000")
+			fmt.Fprintf(client.Conn, "MSG #%d %s %s %s\n", m.ID, m.ChannelName, ts, m.Content)
+			if m.ID > maxId {
+				maxId = m.ID
+			}
+		}
+	}
+	client.LastSeen[channelName] = maxId
+	fmt.Fprintf(client.Conn, "OK SUBSCRIBED to %s\n", channelName)
 }
 
-func (b *Broker) handleUnsubscribe(conn net.Conn, channelName string){
+func (b *Broker) handleUnsubscribe(conn net.Conn, channelName string) {
 	ch := b.getOrCreateChannel(channelName)
 	res := ch.RemoveSubscriber(conn)
 	if res {
@@ -186,21 +206,34 @@ func (b *Broker) handleUnsubscribe(conn net.Conn, channelName string){
 func (b *Broker) handlePublish(channelName, message string) {
 	ch := b.getOrCreateChannel(channelName)
 	msg := ch.AddMessageToChannel(message)
-	ch.Broadcast(channelName, msg)
+
+	offenders := ch.Broadcast(channelName, msg, b.maxBacklog)
+
+	if len(offenders) > 0 {
+		for _, cl := range offenders {
+			fmt.Println("[BACKLOG] disconnecting overloaded cliend:", cl.Conn.RemoteAddr())
+			cl.Conn.Close()
+			b.removeConnection(cl.Conn)
+			b.mu.Lock()
+			delete(b.heartbeats, cl.Conn)
+			delete(b.clients, cl.Conn)
+			b.mu.Unlock()
+		}
+	}
 }
 
-func (b *Broker) handleFetch(conn net.Conn, channelName string){
+func (b *Broker) handleFetch(conn net.Conn, channelName string) {
 	ch := b.getOrCreateChannel(channelName)
 	messages := ch.GetMessages()
 
 	for _, m := range messages {
 		fmt.Fprintf(conn, "MSG #%d %s %s %s\n",
-		m.ID, m.ChannelName, m.Timestamp.Format(time.RFC3339Nano), m.Content)
+			m.ID, m.ChannelName, m.Timestamp.Format(time.RFC3339Nano), m.Content)
 	}
 	fmt.Fprintf(conn, "OK FETCHED %d messages\n", len(messages))
 }
 
-func (b *Broker) loadAllLogs(){
+func (b *Broker) loadAllLogs() {
 	files, err := os.ReadDir("logs")
 	if err != nil {
 		fmt.Println("ERROR while reading /logs folder")
@@ -219,30 +252,29 @@ func (b *Broker) loadAllLogs(){
 		scanner := bufio.NewScanner(bytes.NewReader(currLogs))
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
-			if line == ""{
+			if line == "" {
 				continue
 			}
 			parts := strings.SplitN(line, "|", 4)
 			currId, err := strconv.Atoi(parts[0])
 			if err != nil {
 				fmt.Println("Couldn't convert ID to int", err)
-        		return
+				return
 			}
 			currTimestamp, err := time.Parse(time.RFC3339Nano, parts[1])
 
 			if err != nil {
 				fmt.Println("Couldn't convert Timestamp to time", err)
-        		return
+				return
 			}
 			currChanneleName := parts[2]
 			currContent := parts[3]
 
-
 			msg := &message.Message{
-				ID: currId,
+				ID:          currId,
 				ChannelName: currChanneleName,
-				Content: currContent,
-				Timestamp: currTimestamp,
+				Content:     currContent,
+				Timestamp:   currTimestamp,
 			}
 			ch := b.getOrCreateChannel(currChanneleName)
 			ch.AddMessageStructToChannel(msg)
@@ -252,15 +284,18 @@ func (b *Broker) loadAllLogs(){
 	}
 }
 
-func (b *Broker) handlePing(conn net.Conn){
+func (b *Broker) handlePing(conn net.Conn) {
+	b.mu.Lock()
+	b.heartbeats[conn] = time.Now()
+	b.mu.Unlock()
 	fmt.Fprintf(conn, "PONG\n")
 }
 
-func (b *Broker) handleIdentity(conn net.Conn){
+func (b *Broker) handleIdentity(conn net.Conn) {
 	fmt.Fprintf(conn, "YOU ARE %s\n", conn.RemoteAddr().String())
 }
 
-func (b *Broker) handleInfo(conn net.Conn, channelName string){
+func (b *Broker) handleInfo(conn net.Conn, channelName string) {
 	ch := b.getOrCreateChannel(channelName)
 	messages := ch.GetMessages()
 	subscribers := ch.ListSubscribers()
@@ -268,7 +303,7 @@ func (b *Broker) handleInfo(conn net.Conn, channelName string){
 	fmt.Fprintf(conn, "MESSAGES %d\n", len(messages))
 }
 
-func (b *Broker) deleteChannel(conn net.Conn, channelName string){
+func (b *Broker) deleteChannel(conn net.Conn, channelName string) {
 	ok, err := b.removeChannel(channelName)
 	if err != nil {
 		fmt.Fprintf(conn, "ERR %s\n", err.Error())
@@ -287,7 +322,7 @@ func (b *Broker) deleteChannel(conn net.Conn, channelName string){
 	}
 }
 
-func (b *Broker) handleGet(conn net.Conn, channelName string, id int){
+func (b *Broker) handleGet(conn net.Conn, channelName string, id int) {
 	ok := b.checkChannelExist(channelName)
 	if !ok {
 		fmt.Fprintf(conn, "ERR channel doesn't exist\n")
@@ -312,7 +347,7 @@ func (b *Broker) handleGet(conn net.Conn, channelName string, id int){
 	}
 }
 
-func (b *Broker) handleRetention(conn net.Conn, channelName string, msgCount int){
+func (b *Broker) handleRetention(conn net.Conn, channelName string, msgCount int) {
 	ok := b.checkChannelExist(channelName)
 	if !ok {
 		fmt.Fprintf(conn, "ERR channel doesn't exist\n")
@@ -328,12 +363,39 @@ func (b *Broker) handleRetention(conn net.Conn, channelName string, msgCount int
 		start = 0
 	}
 	slicedMessages := ch.Messages[start:]
-	ok, err := ch.RewriteFile(channelName,slicedMessages)
+	ok, err := ch.RewriteFile(channelName, slicedMessages)
 	if ok {
 		ch.Messages = slicedMessages
 		fmt.Fprintf(conn, "OK RETENTION %s %d", channelName, len(slicedMessages))
 	} else {
 		fmt.Fprintf(conn, "ERR RETENTION server error")
 		fmt.Println(err)
+	}
+}
+
+func (b *Broker) monitorHeartbeat(conn net.Conn) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	timeout := 15 * time.Second // tweak later
+
+	for range ticker.C {
+		b.mu.Lock()
+		last, ok := b.heartbeats[conn]
+		b.mu.Unlock()
+
+		if !ok {
+			return // connection removed
+		}
+
+		if time.Since(last) > timeout {
+			fmt.Println("[HEARTBEAT] Client timed out:", conn.RemoteAddr())
+			conn.Close()
+			b.removeConnection(conn)
+			b.mu.Lock()
+			delete(b.heartbeats, conn)
+			b.mu.Unlock()
+			return
+		}
 	}
 }
