@@ -68,6 +68,9 @@ func (b *Broker) handleCommand(conn net.Conn, line string) {
 		return
 	}
 
+	b.mu.Lock()
+    b.heartbeats[conn] = time.Now()
+    b.mu.Unlock()
 	fields := strings.Fields(trimmed)
 	if len(fields) == 0 {
 		fmt.Println("Invalid command:", line)
@@ -377,7 +380,10 @@ func (b *Broker) monitorHeartbeat(conn net.Conn) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 
-	timeout := 15 * time.Second // tweak later
+	// timeout := 15 * time.Second // tweak later
+	//THIS IS ONLY FOR TESTING
+	timeout := 5 * time.Minute
+
 
 	for range ticker.C {
 		b.mu.Lock()

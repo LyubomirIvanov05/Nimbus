@@ -73,47 +73,60 @@ func (c *Channel) Broadcast(channelName string, message *message.Message, backlo
 	defer c.mu.Unlock()
 
 	offenders := []*client.Client{}
+
 	for sub := range c.Subscribers {
+
+		lastSentID := sub.LastSeen[c.Name]
+
+		for len(sub.Backlog) > 0 {
+			bm := sub.Backlog[0]
+
+			_, err := fmt.Fprintln(sub.Conn, "MSG", c.Name, bm)
+			if err != nil {
+				break
+			}
+
+			sub.Backlog = sub.Backlog[1:]
+
+			if bm.ID > lastSentID {
+				lastSentID = bm.ID
+			}
+		}
+
 		_, err := fmt.Fprintln(sub.Conn, "MSG", c.Name, message)
 		if err != nil {
 			sub.Backlog = append(sub.Backlog, message)
+
 			if len(sub.Backlog) > backlogLimit {
 				offenders = append(offenders, sub)
 			}
 		} else {
-			if sub.LastSeen != nil {
-				sub.LastSeen[c.Name] = message.ID
+			if message.ID > lastSentID {
+				lastSentID = message.ID
 			}
 		}
+		sub.LastSeen[c.Name] = lastSentID
 	}
 
 	filePath := "logs/" + channelName + ".log"
-	isFileExist := CheckFileExists(filePath)
+	line := fmt.Sprintf("%d|%s|%s|%s\n",
+		message.ID,
+		message.Timestamp.Format(time.RFC3339Nano),
+		message.ChannelName,
+		message.Content,
+	)
 
-	if isFileExist {
-		fmt.Println("file exist, about to add to the file")
-		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Println("There was an error opening the file")
-		}
-		defer file.Close()
-
-		line := fmt.Sprintf("%d|%s|%s|%s\n", message.ID, message.Timestamp.Format(time.RFC3339Nano), message.ChannelName, message.Content)
-		_, err = file.WriteString(line)
-		if err != nil {
-			fmt.Println("There was an error adding to the file")
-		}
+	if CheckFileExists(filePath) {
+		f, _ := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
+		defer f.Close()
+		f.WriteString(line)
 	} else {
-
-		fmt.Println("file not exists, about to create a new file and add to it")
-		err := os.WriteFile(filePath, []byte(fmt.Sprintf("%d|%s|%s|%s\n", message.ID, message.Timestamp.Format(time.RFC3339Nano), message.ChannelName, message.Content)), 0644)
-		if err != nil {
-			fmt.Println("There was an error creating the file")
-		}
-
+		os.WriteFile(filePath, []byte(line), 0644)
 	}
+
 	return offenders
 }
+
 
 func CheckFileExists(filePath string) bool {
 	_, error := os.Stat(filePath)
