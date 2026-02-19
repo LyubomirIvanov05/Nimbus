@@ -1,10 +1,10 @@
 # Nimbus
 
-A production-inspired TCP message broker built from scratch to learn Go engineering practices and systems programming.
+A production-grade TCP message broker built in Go from scratch, exploring the internals of systems like NATS and RabbitMQ.
 
 ## Overview
 
-Nimbus is a lightweight publish/subscribe message broker, designed as a learning project to understand concurrent server architecture, connection lifecycle management, and message persistence. Clients communicate over raw TCP using a simple text protocol.
+Nimbus is a lightweight publish/subscribe message broker built in Go. Clients communicate over raw TCP using a simple text protocol, with support for concurrent connections, connection lifecycle management, and message persistence.
 
 ## Features
 
